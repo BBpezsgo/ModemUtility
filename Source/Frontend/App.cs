@@ -8,7 +8,7 @@ class App : IDisposable
 {
     readonly ATModem? at;
 
-    const string CachePath = "/home/BB/Projects/ModemUtility/cache";
+    static readonly string CachePath = Path.Combine(Environment.CurrentDirectory, "cache");
 
     readonly List<Storage<Contact>> Contacts = [];
     readonly List<Contact> ImplicitContacts = [];

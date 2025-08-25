@@ -1,10 +1,13 @@
+using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using ModemUtility.Frontend.Interface;
 using ModemUtility.Modem;
+using PhoneNumbers;
 
 namespace ModemUtility.Frontend;
 
-class App : IDisposable
+sealed class App : IDisposable
 {
     readonly ATModem? at;
 
@@ -47,48 +50,188 @@ class App : IDisposable
             ReadContacts(cts.Token);
         });
 
-        Container rootElement;
+        Border contactsPanel;
+        Border messagesPanel;
+
         Label contactList;
         Label messageList;
+
         Label statusLabel;
 
+        Container rootElement = new(ContainerDirection.Vertical)
         {
-            rootElement = new(ContainerDirection.Vertical);
-            statusLabel = rootElement.Add(new Border<Label>(new Label(), new Sides(0, 1), 0)).Child;
-            Container e = rootElement.Add(new Container(ContainerDirection.Horizontal));
-            contactList = e.Add(new Border<Label>(new Label(), new Sides(0, 1), new Sides(1, 1))).Child;
-            messageList = e.Add(new Border<Label>(new Label(), new Sides(0, 1), new Sides(1, 1))).Child;
-        }
+            MinHeight = Console.WindowHeight - 1,
+        };
+        statusLabel = rootElement.Add(new Label());
+        Container e = rootElement.Add(new Container(ContainerDirection.Horizontal));
+        Border<Label> contactsPanel_ = e.Add(new Border<Label>(new Label(), 0, new Sides(1, 1)) { Title = "Contacts" });
+        Border<Label> messagesPanel_ = e.Add(new Border<Label>(new Label(), 0, new Sides(1, 1)) { Title = "Messages" });
+        contactList = contactsPanel_.Child;
+        messageList = messagesPanel_.Child;
+        contactsPanel = contactsPanel_;
+        messagesPanel = messagesPanel_;
+
+        int selectedContact = 0;
+        int selectedMessage = 0;
+        int selectedMenu = 0;
+
+        /*
+        Table contactsTable = new()
+        {
+            Border = TableBorder.None,
+            ShowHeaders = false,
+        };
+        contactsTable.AddColumn(string.Empty, v =>
+        {
+            v.NoWrap();
+        });
+
+        Table messagesTable = new()
+        {
+            Border = TableBorder.None,
+            ShowHeaders = false,
+        };
+        messagesTable.AddColumn(string.Empty, v =>
+        {
+            v.NoWrap();
+        });
+        messagesTable.AddColumn(string.Empty);
+
+        Layout layout = new Layout("Root")
+            .SplitColumns(
+                new Layout("Contacts", new Panel(contactsTable)
+                {
+                    Header = new PanelHeader("Contacts")
+                }.Expand()),
+                new Layout("Messages", new Panel(messagesTable)
+                {
+                    Header = new PanelHeader("Messages")
+                }.Expand())
+                .Ratio(3));
+        */
 
         while (Run)
         {
             Wait(out ConsoleKeyInfo key);
 
-            contactList.Clear();
-            messageList.Clear();
+            /*
+            contactsTable.Rows.Clear();
+            foreach (Contact v in Contacts.Flat())
+            {
+                contactsTable.Rows.Add([new Text($"{v.Name} {v.Address}").Ellipsis()]);
+            }
+            foreach (Contact v in ImplicitContacts)
+            {
+                contactsTable.Rows.Add([new Text(v.Address.ToString()).Ellipsis()]);
+            }
 
-            statusLabel.Clear();
-            statusLabel.WriteLine(ReadStatus);
+            messagesTable.Rows.Clear();
+            foreach (Message v in Messages.Flat())
+            {
+                Text? contactCell;
+                if (v.Source is not null)
+                {
+                    contactCell = new Text(v.Source.Name ?? v.Source.Address.ToString()).Crop();
+                }
+                else if (v.Destination is not null)
+                {
+                    contactCell = new Text(v.Destination.Name ?? v.Destination.Address.ToString()).Crop();
+                }
+                else
+                {
+                    throw new UnreachableException();
+                }
+                messagesTable.Rows.Add([contactCell, new Text(v.Text).Ellipsis()]);
+            }
+            AnsiConsole.Write(layout);
+            */
+
+            contactList.ClearContent();
+            messageList.ClearContent();
+
+            statusLabel.ClearContent();
+            if (ReadStatus is not null) statusLabel.WriteLine(ReadStatus);
+
+            contactList.FlexBias = Console.WindowWidth / 3;
 
             using (FrontendLock.EnterScope())
             {
-                foreach (Storage<Contact> storage in Contacts)
+                IEnumerable<Contact> allContacts = Contacts.Flat().Append(ImplicitContacts);
+                IEnumerable<Message> allMessages = Messages.Flat().OrderBy(v => v.Time);
+
+                switch (key.Key)
                 {
-                    foreach (Contact contact in storage)
+                    case ConsoleKey.LeftArrow:
+                        selectedMenu = ((--selectedMenu) + 2) % 2;
+                        break;
+                    case ConsoleKey.RightArrow:
+                        selectedMenu = ((++selectedMenu) + 2) % 2;
+                        break;
+                    case ConsoleKey.UpArrow:
+                        if (selectedMenu == 0)
+                        {
+                            selectedContact = Math.Clamp(selectedContact - 1, 0, allContacts.Count() - 1);
+                        }
+                        else if (selectedMenu == 1)
+                        {
+                            selectedMessage = Math.Clamp(selectedMessage - 1, 0, allMessages.Count() - 1);
+                        }
+                        break;
+                    case ConsoleKey.DownArrow:
+                        if (selectedMenu == 0)
+                        {
+                            selectedContact = Math.Clamp(selectedContact + 1, 0, allContacts.Count() - 1);
+                        }
+                        else if (selectedMenu == 1)
+                        {
+                            selectedMessage = Math.Clamp(selectedMessage + 1, 0, allMessages.Count() - 1);
+                        }
+                        break;
+                }
+
+                contactsPanel.Color = selectedMenu == 0 ? AnsiColor.BrightRed : AnsiColor.Silver;
+                messagesPanel.Color = selectedMenu == 1 ? AnsiColor.BrightRed : AnsiColor.Silver;
+
+                Contact selectedContactItem = allContacts.GetItem(selectedContact);
+
+                foreach (Contact contact in allContacts.Skip(Math.Max(0, selectedContact - 10)))
+                {
+                    bool selected = contact == selectedContactItem; ;
+                    if (selected) contactList.Style("\e[30;41m");
+                    if (string.IsNullOrEmpty(contact.Name))
+                    {
+                        contactList.WriteLine($"{contact.Address}");
+                    }
+                    else
                     {
                         contactList.WriteLine($"{contact.Name} {contact.Address}");
                     }
-                }
-                foreach (Contact contact in ImplicitContacts)
-                {
-                    contactList.WriteLine($"{contact.Address}");
+                    if (selected) contactList.Style("\e[0m");
                 }
 
-                foreach (Storage<Message> storage in Messages)
+                foreach (Message message in allMessages)
                 {
-                    foreach (Message message in storage)
+                    if (message.Source is not null)
                     {
-                        messageList.WriteLine($"{message.Source?.Name ?? message.Destination?.Name} {message.Text}");
+                        if (message.Source != selectedContactItem) continue;
+                        messageList.Style("\e[31m");
+                        messageList.Write(">");
+                        messageList.Style("\e[0m");
+                        messageList.Write(" ");
+                        messageList.WriteLine(message.Text);
+                    }
+                    else if (message.Destination is not null)
+                    {
+                        if (message.Destination != selectedContactItem) continue;
+                        messageList.Style("\e[34m");
+                        messageList.Write("<");
+                        messageList.Style("\e[0m");
+                        messageList.Write(" ");
+                        messageList.WriteLine(message.Text);
+                    }
+                    else
+                    {
+                        throw new UnreachableException();
                     }
                 }
             }
@@ -96,9 +239,12 @@ class App : IDisposable
             rootElement.MaxWidth = Console.WindowWidth;
             rootElement.MaxHeight = Math.Max(0, Console.WindowHeight - 1);
 
+            rootElement.MinWidth = Console.WindowWidth;
+            rootElement.MinHeight = Math.Max(0, Console.WindowHeight - 1);
+
             rootElement.RecalculateLayout();
 
-            Console.Clear();
+            Console.Write("\e[H");
             InterfaceRenderer.Render(rootElement);
         }
 
@@ -108,43 +254,95 @@ class App : IDisposable
 
     Contact GetOrCreateContact(string address)
     {
+        PossiblePhoneNumber parsed = ParseAddress(address);
+
         foreach (Storage<Contact> a in Contacts)
         {
             foreach (Contact contact in a)
             {
-                if (contact.Address == address) return contact;
+                if (contact.Address.Equals(parsed)) return contact;
             }
         }
 
         foreach (Contact contact in ImplicitContacts)
         {
-            if (contact.Address == address) return contact;
+            if (contact.Address.Equals(parsed)) return contact;
         }
 
-        Contact result = new(-1, address, address);
+        Contact result = new(-1, parsed, null);
         ImplicitContacts.Add(result);
         IsDirty = true;
         return result;
     }
 
-    void OnMessage(Storage<Message> storageFrontend, int index, SmsMessage message)
+    static PossiblePhoneNumber ParseAddress(string address)
     {
-        if (storageFrontend.Any(v => v.Index == index)) return;
+        PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.GetInstance();
+
+        if (address.StartsWith("06", StringComparison.Ordinal))
+        {
+            address = "+36" + address[2..];
+        }
+
+        try
+        {
+            if (address.StartsWith('+'))
+            {
+                return new PossiblePhoneNumber(phoneNumberUtil.Parse(address, null), address);
+            }
+            else if (address.Length > 4)
+            {
+                string regionCode = phoneNumberUtil.GetRegionCodeForCountryCode(int.Parse(address[..Math.Min(3, address.Length)], CultureInfo.InvariantCulture));
+                if (regionCode == "ZZ") regionCode = phoneNumberUtil.GetRegionCodeForCountryCode(int.Parse(address[..Math.Min(2, address.Length)], CultureInfo.InvariantCulture));
+                return new PossiblePhoneNumber(phoneNumberUtil.Parse(address, regionCode), address);
+            }
+        }
+        catch (NumberParseException)
+        {
+            Debug.WriteLine($"Invalid number {address}");
+        }
+        return new PossiblePhoneNumber(null, address);
+    }
+
+    void OnMessage(Storage<Message> storage, int index, SmsMessage message)
+    {
+        if (index != -1 && storage.Any(v => v.Index == index)) return;
 
         Contact? source = message.Sender is null ? null : GetOrCreateContact(message.Sender);
         Contact? destination = message.Destination is null ? null : GetOrCreateContact(message.Destination);
 
         if (message.Concat is not null)
         {
-            Message? messageFrontend = storageFrontend.FirstOrDefault(v => v.Reference.HasValue && v.Reference.Value == message.Concat.Reference);
-            messageFrontend ??= new Message(index, source, destination, message.Concat.Reference);
-            messageFrontend.InsertPart(message.Concat.Sequence, message.Text ?? string.Empty);
+            Message? messageFrontend = storage.FirstOrDefault(v => v.Reference.HasValue && v.Reference.Value == message.Concat.Reference);
+            messageFrontend ??= new Message(index, source, destination, message.ServiceCenterTimestamp ?? DateTimeOffset.UnixEpoch, message.Concat.Reference);
+            messageFrontend.InsertPart(message.Concat.Sequence, message.Text);
         }
         else
         {
-            Message messageFrontend = new(index, source, destination, message.Text ?? string.Empty);
-            storageFrontend.Add(messageFrontend);
+            Message messageFrontend = new(index, source, destination, message.ServiceCenterTimestamp ?? DateTimeOffset.UnixEpoch, message.Text);
+            storage.Add(messageFrontend);
         }
+        IsDirty = true;
+    }
+
+    void OnContact(Storage<Contact> storage, Modem.Contact contact)
+    {
+        if (contact.Index != -1 && storage.Any(v => v.Index == contact.Index)) return;
+
+        PossiblePhoneNumber address = ParseAddress(contact.Address);
+
+        foreach (Contact item in ImplicitContacts)
+        {
+            if (!item.Address.Equals(address)) continue;
+            item.Index = contact.Index;
+            item.Name = contact.Name;
+            ImplicitContacts.Remove(item);
+            storage.Add(item);
+            IsDirty = true;
+            return;
+        }
+
+        storage.Add(new Contact(contact.Index, address, contact.Name));
         IsDirty = true;
     }
 
@@ -155,8 +353,7 @@ class App : IDisposable
             string[] storages = ["ME", "SM_P"];
             foreach (string storage in storages)
             {
-                Storage<Message> storageFrontend = new(storage, 0, 0);
-                Messages.Add(storageFrontend);
+                Storage<Message>? storageFrontend = Messages.EnsureStorage(storage, 0, 0);
 
                 if (File.Exists(Path.Combine(CachePath, "messages", storage)))
                 {
@@ -171,7 +368,20 @@ class App : IDisposable
 
     void ReadContactsLocal()
     {
-        // TODO
+        if (!Directory.Exists(Path.Combine(CachePath, "phonebook"))) return;
+        using (FrontendLock.EnterScope())
+        {
+            foreach (string file in Directory.GetFiles(Path.Combine(CachePath, "phonebook")))
+            {
+                string storage = Path.GetFileName(file);
+                Storage<Contact>? storageFrontend = Contacts.EnsureStorage(storage, 0, 0);
+
+                foreach (string[] line in File.ReadAllLines(file).Select(v => v.Split(' ')))
+                {
+                    OnContact(storageFrontend, new Modem.Contact(int.Parse(line[0], CultureInfo.InvariantCulture), line[2], int.Parse(line[1], CultureInfo.InvariantCulture), Encoding.UTF8.GetString(Convert.FromHexString(line[3]))));
+                }
+            }
+        }
     }
 
     void ReadMessages(CancellationToken ct)
@@ -181,27 +391,13 @@ class App : IDisposable
         string[] storages = ["ME", "SM_P"];
         foreach (string storage in storages)
         {
-            MessageStorage storageInfo = at.SelectMessageStorage(storage);
-            Storage<Message>? storageFrontend = null;
-
             ReadStatus = $"Reading messages from {storage} ...";
+            MessageStorage storageInfo = at.SelectMessageStorage(storage);
 
+            Storage<Message> storageFrontend;
             using (FrontendLock.EnterScope())
             {
-                foreach (Storage<Message> item in Messages)
-                {
-                    if (item.Name != storageInfo.Name) continue;
-                    item.Used = storageInfo.Used;
-                    item.Total = storageInfo.Total;
-                    IsDirty = true;
-                    break;
-                }
-
-                if (storageFrontend is null)
-                {
-                    storageFrontend = new Storage<Message>(storageInfo.Name, storageInfo.Used, storageInfo.Total);
-                    Messages.Add(storageFrontend);
-                }
+                storageFrontend = Messages.EnsureStorage(storageInfo.Name, storageInfo.Used, storageInfo.Total);
             }
 
             at.MessagePresentationFormat = 0;
@@ -210,6 +406,7 @@ class App : IDisposable
                 if (ct.IsCancellationRequested) break;
 
                 ReadStatus = $"Reading messages from {storage} ... ({i} / {storageInfo.Total})";
+                IsDirty = true;
 
                 (MessageStatus Status, int Length, string PDU)? raw = at.GetMessagePdu(i);
                 if (!raw.HasValue) continue;
@@ -224,12 +421,6 @@ class App : IDisposable
         IsDirty = true;
     }
 
-    static bool AddressEquals(string a, string b)
-    {
-        // TODO
-        return a.Equals(b, StringComparison.Ordinal);
-    }
-
     void ReadContacts(CancellationToken ct)
     {
         if (at is null) return;
@@ -237,47 +428,15 @@ class App : IDisposable
         string[] storages = ["ME"];
         foreach (string storage in storages)
         {
+            ReadStatus = $"Reading contacts from {storage} ...";
             at.SelectPhonebookStorage(storage);
+
             PhonebookStorage storageInfo = at.GetCurrentPhonebookStorage();
 
-            ReadStatus = $"Reading contacts from {storageInfo.Name} ...";
-
-            Storage<Contact>? storageFrontend = null;
-
+            Storage<Contact> storageFrontend;
             using (FrontendLock.EnterScope())
             {
-                foreach (Storage<Contact> item in Contacts)
-                {
-                    if (item.Name != storageInfo.Name) continue;
-                    item.Used = storageInfo.Used;
-                    item.Total = storageInfo.Total;
-                    break;
-                }
-                if (storageFrontend is null)
-                {
-                    storageFrontend = new Storage<Contact>(storageInfo.Name, storageInfo.Used, storageInfo.Total);
-                    Contacts.Add(storageFrontend);
-                }
-                IsDirty = true;
-            }
-
-            void OnContact(Modem.Contact contact)
-            {
-                if (storageFrontend.Any(v => v.Index == contact.Index)) return;
-
-                foreach (Contact item in ImplicitContacts)
-                {
-                    if (!AddressEquals(item.Address, contact.Address)) continue;
-                    item.Index = contact.Index;
-                    item.Name = contact.Name;
-                    ImplicitContacts.Remove(item);
-                    storageFrontend.Add(item);
-                    IsDirty = true;
-                    return;
-                }
-
-                storageFrontend.Add(new Contact(contact.Index, contact.Address, contact.Name));
-                IsDirty = true;
+                storageFrontend = Contacts.EnsureStorage(storageInfo.Name, storageInfo.Used, storageInfo.Total);
             }
 
             for (int i = 1; i <= storageInfo.Total; i++)
@@ -285,12 +444,17 @@ class App : IDisposable
                 if (ct.IsCancellationRequested) break;
 
                 ReadStatus = $"Reading contacts from {storageInfo.Name} ... ({i} / {storageInfo.Total})";
+                IsDirty = true;
 
                 Modem.Contact? raw = at.GetContact(i);
                 if (!raw.HasValue) continue;
-                OnContact(raw.Value);
+                OnContact(storageFrontend, raw.Value);
                 Directory.CreateDirectory(Path.Combine(CachePath, "phonebook"));
-                File.AppendAllLines(Path.Combine(CachePath, "phonebook", storageInfo.Name), [$"{raw.Value.Index} {raw.Value.Type} {raw.Value.Address} {raw.Value.Name.Replace('\r', ' ').Replace('\n', ' ')}"]);
+#pragma warning disable CA2201
+                File.WriteAllLines(Path.Combine(CachePath, "phonebook", storageInfo.Name),
+                    storageFrontend.Select(v => $"{v.Index} {v.Type} {v.Address} {Convert.ToHexString(Encoding.UTF8.GetBytes(v.Name ?? throw new NullReferenceException()))}")
+                );
+#pragma warning restore CA2201
             }
 
             ReadStatus = null;
@@ -301,212 +465,34 @@ class App : IDisposable
 
     void Wait(out ConsoleKeyInfo key)
     {
+        int w = Console.WindowWidth;
+        int h = Console.WindowHeight;
+        long started = Stopwatch.GetTimestamp();
+
         key = default;
-        while (!IsDirty)
+        while (true)
         {
             if (!Console.IsOutputRedirected && Console.KeyAvailable)
             {
                 key = Console.ReadKey(true);
+                return;
+            }
+
+            if (w != Console.WindowWidth || h != Console.WindowHeight)
+            {
                 IsDirty = true;
                 return;
             }
+
+            if (IsDirty && (Stopwatch.GetTimestamp() - started) * 10 / Stopwatch.Frequency > 0)
+            {
+                break;
+            }
+
             Thread.Sleep(50);
         }
         IsDirty = false;
     }
-
-    /*
-    void Menu2()
-    {
-        IsDirty = true;
-
-        while (Run && menu == 2 && selectedStorage is null)
-        {
-            Wait(out ConsoleKeyInfo key);
-            Console.Clear();
-
-            Console.WriteLine($"╭╮ Messages - Loading ... ╭────────");
-            Console.WriteLine($"│ ");
-            break;
-        }
-
-        if (!Run || menu != 2 || selectedStorage is null) return;
-
-        List<(MessageStatus Status, SmsMessage Message, int Index)> messages = new(selectedStorage.Value.Used);
-        if (File.Exists(Path.Combine(CachePath, "messages", selectedStorage.Value.Name)))
-        {
-            foreach (var line in File.ReadAllLines(Path.Combine(CachePath, "messages", selectedStorage.Value.Name)).Select(v => v.Split(' ')))
-            {
-                messages.Add((
-                    (MessageStatus)int.Parse(line[1]),
-                    PduDecoder.Decode(line[2]),
-                    int.Parse(line[0])
-                ));
-            }
-        }
-
-        int selectedMessage = messages.Count - 1;
-
-        CancellationTokenSource cancel = new();
-        Task.Run(() =>
-        {
-            at.MessagePresentationFormat = 0;
-            int lastIndex = -1;
-            for (int i = 0; i <= selectedStorage.Value.Total; i++)
-            {
-                if (cancel.Token.IsCancellationRequested) break;
-                if (messages.Any(v => v.Index == i)) continue;
-                var raw = at.GetMessagePdu(i);
-                if (!raw.HasValue) continue;
-                if (selectedMessage == lastIndex) selectedMessage = i;
-                lastIndex = i;
-                messages.Add((raw.Value.Status, PduDecoder.Decode(raw.Value.PDU), i));
-                Directory.CreateDirectory(Path.Combine(CachePath, "messages"));
-                File.AppendAllLines(Path.Combine(CachePath, "messages", selectedStorage.Value.Name), [$"{i} {(int)raw.Value.Status} {raw.Value.PDU}"]);
-                IsDirty = true;
-            }
-        }, cancel.Token);
-
-        IsDirty = true;
-        while (Run && menu == 2)
-        {
-            Wait(out ConsoleKeyInfo key);
-            Console.Clear();
-
-            Console.WriteLine($"╭╮ Messages - {selectedStorage!.Value.Name} ({selectedStorage.Value.Used}/{selectedStorage.Value.Total}) ╭────────");
-            Console.WriteLine($"│ ");
-
-            int k = messages.Index().FirstOrDefault(v => v.Item.Index == selectedMessage).Index;
-
-            int end = Math.Min(messages.Count, k + 5);
-            int start = Math.Max(0, k - 5);
-
-            for (int j = start; j < end; j++)
-            {
-                (MessageStatus Status, SmsMessage Message, int Index) item = messages[j];
-                string text;
-                if (item.Message.Concat is not null)
-                {
-                    if (item.Message.Concat.Sequence != 1) continue;
-                    var sequence = messages
-                        .Where(v => v.Message.Sender == item.Message.Sender && v.Message.Destination == item.Message.Destination && v.Message.Concat is not null && v.Message.Concat.Reference == v.Message.Concat.Reference)
-                        .Select(v => (v.Message.Text, v.Message.Concat!.Sequence))
-                        .ToArray();
-                    Array.Sort(sequence, (a, b) => a.Sequence - b.Sequence);
-                    text = string.Join(null, sequence.Select(v => v.Text));
-                }
-                else
-                {
-                    text = item.Message.Text ?? string.Empty;
-                }
-                text = text.Trim();
-                int i = text.IndexOfAny(['\r', '\n']);
-                if (i != -1) text = text[..i];
-                if (text.Length > 30) text = text[..30] + "...";
-
-                Console.Write("│ ");
-                if (selectedMessage == item.Index)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                }
-                Console.WriteLine($"{item.Status switch
-                {
-                    MessageStatus.RecRead => "<",
-                    MessageStatus.StoUnsent => ">",
-                    MessageStatus.StoSent => ">",
-                    _ => $"{item.Status}",
-                }} {item.Message.Sender ?? item.Message.Destination} :: {text}");
-                Console.ResetColor();
-            }
-
-            Console.WriteLine($"│ ");
-            Console.WriteLine($"│ B - Back");
-
-            if (key.Key == ConsoleKey.B)
-            {
-                menu = 1;
-                selectedStorage = null;
-                cancel.Cancel();
-            }
-            else if (key.Key == ConsoleKey.S)
-            {
-                var v = messages
-                    .Where(v => v.Message.Concat is null || v.Message.Concat.Sequence == 1)
-                    .Select(v => v.Index)
-                    .Where(v => v > selectedMessage);
-                if (v.Any()) selectedMessage = v.Min();
-            }
-            else if (key.Key == ConsoleKey.W)
-            {
-                var v = messages
-                    .Where(v => v.Message.Concat is null || v.Message.Concat.Sequence == 1)
-                    .Select(v => v.Index)
-                    .Where(v => v < selectedMessage);
-                if (v.Any()) selectedMessage = v.Max();
-            }
-        }
-    }
-
-    void Menu1()
-    {
-        IsDirty = true;
-        while (Run && menu == 1)
-        {
-            Wait(out ConsoleKeyInfo key);
-            Console.Clear();
-
-            Console.WriteLine($"╭╮ Messages ╭────────");
-            Console.WriteLine($"│ ");
-
-            for (int i = 0; i < MessageStorages.Length; i++)
-            {
-                Console.WriteLine($"│ {i} > {MessageStorages[i]}");
-            }
-            Console.WriteLine($"│ B > Back");
-
-            if (key.Key >= ConsoleKey.D0 && key.Key <= ConsoleKey.D9 &&
-                key.Key - ConsoleKey.D0 < MessageStorages.Length)
-            {
-                Task.Run(() =>
-                {
-                    selectedStorage = at.SelectMessageStorage(MessageStorages[key.Key - ConsoleKey.D0]);
-                    IsDirty = true;
-                });
-                menu = 2;
-            }
-            else if (key.Key == ConsoleKey.B)
-            {
-                menu = 0;
-            }
-        }
-    }
-
-    void Menu0()
-    {
-        IsDirty = true;
-        while (Run && menu == 0)
-        {
-            Wait(out ConsoleKeyInfo key);
-
-            Console.Clear();
-
-            Console.WriteLine($"╭╮ CAT B25 ╭────────");
-            Console.WriteLine($"│ ");
-            Console.WriteLine($"│ M > Messages");
-            Console.WriteLine($"│ C > Contacts");
-            Console.WriteLine($"│ B > Exit");
-
-            if (key.Key == ConsoleKey.M)
-            {
-                menu = 1;
-            }
-            else if (key.Key == ConsoleKey.B)
-            {
-                Run = false;
-            }
-        }
-    }
-    */
 
     public void Dispose() => at?.Dispose();
 }

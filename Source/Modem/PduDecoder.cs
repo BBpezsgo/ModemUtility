@@ -121,6 +121,7 @@ public static class PduDecoder
         i += octets;
 
         string dest = DecodeAddress(typeOfAddress, bytes, digits);
+        DecodeAddress(typeOfAddress, bytes, digits);
 
         return dest;
     }
@@ -299,17 +300,21 @@ public static class PduDecoder
         TypeOfNumber typeOfNumber = (TypeOfNumber)((toa & 0x70) >> 4);
         NumberingPlanIdentification numberPlanIdentification = (NumberingPlanIdentification)((toa & 0x0F) >> 4);
 
-        int digitsCount = digitsCountOpt ?? (semiOctets.Length * 2);
+        int expectedLength = digitsCountOpt ?? (semiOctets.Length * 2);
         StringBuilder builder = new();
 
-        if (typeOfNumber == TypeOfNumber.International) builder.Append('+');
+        if (typeOfNumber == TypeOfNumber.International)
+        {
+            builder.Append('+');
+            expectedLength++;
+        }
 
         for (int i = 0; i < semiOctets.Length; i++)
         {
             int lo = semiOctets[i] & 0x0F;
             int hi = (semiOctets[i] >> 4) & 0x0F;
-            if (builder.Length < digitsCount) builder.Append((char)((lo <= 9) ? ('0' + lo) : ('A' + (lo - 10))));
-            if (builder.Length < digitsCount && hi != 0x0F) builder.Append((char)((hi <= 9) ? ('0' + hi) : ('A' + (hi - 10))));
+            if (builder.Length < expectedLength) builder.Append((char)((lo <= 9) ? ('0' + lo) : ('A' + (lo - 10))));
+            if (builder.Length < expectedLength && hi != 0x0F) builder.Append((char)((hi <= 9) ? ('0' + hi) : ('A' + (hi - 10))));
         }
 
         return builder.ToString();

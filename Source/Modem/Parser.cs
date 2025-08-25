@@ -79,7 +79,7 @@ public ref struct Reader
     {
         ReadOnlySpan<char> v = ReadNextValue();
         if (v.Length == 0) return [];
-        if (!v.StartsWith('"') || !v.EndsWith("")) throw new CommunicationException($"Invalid response");
+        if (!v.StartsWith('"')) throw new CommunicationException($"Invalid response");
         return v[1..^1];
     }
 

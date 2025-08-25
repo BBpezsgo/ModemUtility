@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="libphonenumber-csharp" Version="9.0.11" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0-preview.6.25358.103" />
   </ItemGroup>
 

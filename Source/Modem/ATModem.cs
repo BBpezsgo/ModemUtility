@@ -17,7 +17,7 @@ public class ATModem : IDisposable
         {
             NewLine = "\r\n",
             ReadTimeout = 10000,
-            WriteTimeout = 10000
+            WriteTimeout = 10000,
         };
         Port.Open();
 
@@ -29,25 +29,25 @@ public class ATModem : IDisposable
 
     public string ATGet(string command, bool debug = false)
     {
-        string result = Send($"AT{command}", debug);
+        string? result = Send($"AT{command}", debug);
 
-        if (!result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
+        if (result is null || !result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
 
         return result[(command.Length + 2)..];
     }
 
     public string ATQuery(string command, bool debug = false)
     {
-        string result = Send($"AT{command}?", debug);
+        string? result = Send($"AT{command}?", debug);
 
-        if (!result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
+        if (result is null || !result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
 
         return result[(command.Length + 2)..];
     }
 
-    public string ATSet(string command, string value, bool debug = false)
+    public string? ATSet(string command, string value, bool debug = false)
     {
-        string result = Send($"AT{command}={value}", debug);
+        string? result = Send($"AT{command}={value}", debug);
 
         if (string.IsNullOrEmpty(result)) return result;
         if (!result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
@@ -57,14 +57,14 @@ public class ATModem : IDisposable
 
     public string ATTest(string command, bool debug = false)
     {
-        string result = Send($"AT{command}=?", debug);
+        string? result = Send($"AT{command}=?", debug);
 
-        if (!result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
+        if (result is null || !result.StartsWith($"{command}: ", StringComparison.Ordinal)) throw new CommunicationException($"Invalid response");
 
         return result[(command.Length + 2)..];
     }
 
-    public string Send(string command, bool debug = false)
+    public string? Send(string command, bool debug = false)
     {
         string result = SendImp(command, debug);
 
@@ -78,14 +78,7 @@ public class ATModem : IDisposable
         string finalResult = result[(i + 1)..];
         if (finalResult != "OK" && finalResult != "0" && finalResult != string.Empty) throw new ModemException(finalResult);
 
-        if (i == -1)
-        {
-            return string.Empty;
-        }
-        else
-        {
-            return result[..i];
-        }
+        return i == -1 ? null : result[..i];
     }
 
     bool WaitForData(int timeoutMs)
@@ -395,17 +388,17 @@ public class ATModem : IDisposable
         return result.ToImmutable();
     }
 
-    public ImmutableArray<Operator> GetOperators()
+    public ImmutableArray<ServiceOperator> GetOperators()
     {
         ReadOnlySpan<char> res = ATQuery("+COPS");
         if (res.IsEmpty) throw new CommunicationException($"Empty response");
 
-        ImmutableArray<Operator>.Builder result = ImmutableArray.CreateBuilder<Operator>();
+        ImmutableArray<ServiceOperator>.Builder result = ImmutableArray.CreateBuilder<ServiceOperator>();
         Reader reader = new(res);
 
         while (!reader.IsEnd)
         {
-            result.Add(Operator.Parse(ref reader));
+            result.Add(ServiceOperator.Parse(ref reader));
         }
 
         return result.ToImmutable();

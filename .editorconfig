@@ -38,3 +38,11 @@ dotnet_diagnostic.IDE0058.severity = none
 
 # IDE0210: Convert to top-level statements
 csharp_style_prefer_top_level_statements = false
+
+# IDE0045: Convert to conditional expression
+dotnet_diagnostic.IDE0045.severity = silent
+
+# IDE0010: Add missing cases
+dotnet_diagnostic.IDE0010.severity = silent
+
+dotnet_diagnostic.CA1716.severity = silent
